@@ -7,7 +7,7 @@ Dashboard interaktif (Streamlit) untuk laporan keuangan DKM Al Ikhlas, dibuat da
 
 - `dashboard.py` — aplikasi Streamlit utama
 - `data_loader.py` — pembaca & pembersih data dari Excel (parsing tanggal Indonesia, kategorisasi transaksi, agregasi bulanan, tambah transaksi, export XLSX)
-- `auth.py` — password gate untuk halaman Input Kotak Amal
+- `auth.py` — password gate admin (dipakai bersama untuk: ganti file laporan, tambah transaksi, input kotak amal)
 - `data/laporan_keuangan.xlsx` — salinan file sumber
 - `requirements.txt` — daftar dependensi Python
 
@@ -29,10 +29,13 @@ Dashboard interaktif (Streamlit) untuk laporan keuangan DKM Al Ikhlas, dibuat da
 - **Tren saldo kas** dari waktu ke waktu.
 - **Pemasukan vs pengeluaran per bulan** (bar chart) + garis arus kas bersih.
 - **Breakdown kategori** — pie chart sumber pemasukan (Kotak Amal, Infaq QRIS, Dana RW, dll) dan kategori pengeluaran (Gaji Marbot, TPA, Listrik, Renovasi, dll).
-- **10 transaksi terbesar** (pemasukan & pengeluaran).
-- **Tambah Transaksi** (sidebar, halaman Dashboard) — input pemasukan/pengeluaran manual apa saja, langsung tercatat ke ledger untuk sesi berjalan.
-- **Input Kotak Amal** (halaman terpisah, dilindungi password) — form hitung pecahan uang (Rp100.000 s/d Rp500) seperti rekap kotak amal manual; total otomatis dihitung dan dicatat sebagai transaksi pemasukan dengan keterangan "Pemasukan Kotak Amal" pada tanggal yang dipilih.
-  - Password default: `amalalikhlas26` (lihat `auth.py` untuk cara mengganti, disarankan lewat environment variable `KOTAK_AMAL_PASSWORD`).
+- **10 transaksi terbesar** (pemasukan & pengeluaran) — tampil persis di bawah ringkasan KPI.
+- **Login Admin** (sidebar) — satu password admin yang membuka tiga fitur berikut. Password default: `amalalikhlas26` (lihat `auth.py` untuk cara mengganti; lokal lewat environment variable `KOTAK_AMAL_PASSWORD`, di Streamlit Cloud lewat Settings → Secrets).
+  - **Ganti file laporan** (upload `.xlsx` lain)
+  - **Tambah Transaksi** — input pemasukan/pengeluaran manual apa saja, langsung tercatat ke ledger untuk sesi berjalan
+  - **Input Kotak Amal** (halaman terpisah) — form hitung pecahan uang (Rp100.000 s/d Rp500) seperti rekap kotak amal manual; total otomatis dihitung dan dicatat sebagai transaksi pemasukan dengan keterangan "Pemasukan Kotak Amal" pada tanggal yang dipilih.
+
+  Pengunjung tanpa login tetap bisa melihat seluruh dashboard (grafik, tabel, filter, export) — hanya tiga fitur di atas yang dikunci.
 - **Export ke Excel (.xlsx)** — unduh ledger terfilter atau seluruh ledger (termasuk transaksi baru yang sudah diinput) sebagai file Excel yang rapi. CSV tetap tersedia juga.
 - **Ganti file** — bisa upload file `.xlsx` laporan bulan lain langsung dari sidebar, tanpa perlu edit kode.
 

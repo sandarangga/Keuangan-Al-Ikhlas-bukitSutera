@@ -5,7 +5,8 @@ Jalankan dengan:
     streamlit run dashboard.py
 
 Secara default dashboard membaca file di data/laporan_keuangan.xlsx.
-Kamu juga bisa upload file .xlsx lain langsung dari sidebar.
+Admin yang login bisa upload file .xlsx lain, menambah transaksi manual,
+dan input hasil hitungan kotak amal.
 """
 
 from pathlib import Path
@@ -64,13 +65,50 @@ def get_data(file_bytes_or_path):
     return load_ledger(file_bytes_or_path)
 
 
+if "admin_authed" not in st.session_state:
+    st.session_state["admin_authed"] = False
+
+
+def render_admin_login(location, form_key: str):
+    """Render a small login form. `location` is st.sidebar or st (main area).
+    Returns True if the login attempt in this run succeeded."""
+    with location.form(form_key):
+        pw = st.text_input("Password Admin", type="password", key=f"{form_key}_pw")
+        submitted = st.form_submit_button("Masuk")
+    if submitted:
+        if check_password(pw):
+            st.session_state["admin_authed"] = True
+            st.rerun()
+        else:
+            location.error("Password salah. Coba lagi.")
+    return False
+
+
 # ---------------------------------------------------------------------------
-# Sidebar - sumber data & filter
+# Sidebar - login admin, sumber data & navigasi
 # ---------------------------------------------------------------------------
 st.sidebar.title("🕌 Al Ikhlas")
 st.sidebar.caption("Dashboard Keuangan DKM")
 
-uploaded = st.sidebar.file_uploader("Ganti file laporan (.xlsx)", type=["xlsx"])
+st.sidebar.markdown("---")
+if st.session_state["admin_authed"]:
+    st.sidebar.success("✅ Login sebagai Admin")
+    if st.sidebar.button("🚪 Keluar", use_container_width=True):
+        st.session_state["admin_authed"] = False
+        st.rerun()
+else:
+    st.sidebar.markdown("**🔒 Login Admin**")
+    st.sidebar.caption(
+        "Diperlukan untuk ganti file laporan, tambah transaksi, "
+        "atau input kotak amal."
+    )
+    render_admin_login(st.sidebar, "admin_login_sidebar")
+
+st.sidebar.markdown("---")
+
+uploaded = None
+if st.session_state["admin_authed"]:
+    uploaded = st.sidebar.file_uploader("Ganti file laporan (.xlsx)", type=["xlsx"])
 
 if uploaded is not None:
     source_key = uploaded.name
@@ -80,8 +118,8 @@ elif DEFAULT_PATH.exists():
     base_df = get_data(str(DEFAULT_PATH))
 else:
     st.error(
-        "File data tidak ditemukan. Upload file laporan keuangan (.xlsx) "
-        "lewat sidebar untuk mulai."
+        "File data tidak ditemukan. Login sebagai admin lalu upload file "
+        "laporan keuangan (.xlsx) lewat sidebar untuk mulai."
     )
     st.stop()
 
@@ -100,7 +138,7 @@ page = st.sidebar.radio(
 )
 
 # =============================================================================
-# HALAMAN: INPUT KOTAK AMAL (dilindungi password)
+# HALAMAN: INPUT KOTAK AMAL (dilindungi login admin)
 # =============================================================================
 if page == "🪙 Input Kotak Amal":
     st.title("🪙 Input Pemasukan Kotak Amal")
@@ -109,27 +147,10 @@ if page == "🪙 Input Kotak Amal":
         "Hasil hitungan akan otomatis tercatat sebagai pemasukan di ledger."
     )
 
-    if "kotak_amal_authed" not in st.session_state:
-        st.session_state["kotak_amal_authed"] = False
-
-    if not st.session_state["kotak_amal_authed"]:
-        st.info("🔒 Masukkan password untuk mengakses form input kotak amal.")
-        with st.form("login_kotak_amal"):
-            pw_input = st.text_input("Password", type="password")
-            login_submitted = st.form_submit_button("Masuk")
-        if login_submitted:
-            if check_password(pw_input):
-                st.session_state["kotak_amal_authed"] = True
-                st.rerun()
-            else:
-                st.error("Password salah. Coba lagi.")
+    if not st.session_state["admin_authed"]:
+        st.info("🔒 Masukkan password admin untuk mengakses form input kotak amal.")
+        render_admin_login(st, "admin_login_kotakamal")
         st.stop()
-
-    top_l, top_r = st.columns([5, 1])
-    with top_r:
-        if st.button("🚪 Keluar", use_container_width=True):
-            st.session_state["kotak_amal_authed"] = False
-            st.rerun()
 
     st.markdown("---")
 
@@ -205,39 +226,44 @@ if page == "🪙 Input Kotak Amal":
 # =============================================================================
 
 # -----------------------------------------------------------------------
-# Input transaksi baru
+# Input transaksi baru (khusus admin yang sudah login)
 # -----------------------------------------------------------------------
 st.sidebar.markdown("---")
 st.sidebar.subheader("➕ Tambah Transaksi")
-with st.sidebar.form("form_tambah_transaksi", clear_on_submit=True):
-    tgl_baru = st.date_input("Tanggal", value=df["tanggal"].max().date())
-    ket_baru = st.text_input("Keterangan")
-    jenis_baru = st.radio("Jenis", ["Pemasukan", "Pengeluaran"], horizontal=True)
-    jumlah_baru = st.number_input("Jumlah (Rp)", min_value=0, step=1000, format="%d")
-    kategori_opts_all = sorted(df["kategori"].unique().tolist())
-    if "Lainnya" not in kategori_opts_all:
-        kategori_opts_all.append("Lainnya")
-    kategori_baru = st.selectbox("Kategori", kategori_opts_all, index=kategori_opts_all.index("Lainnya"))
-    submitted = st.form_submit_button("Tambah Transaksi", use_container_width=True)
-
-if submitted:
-    if not ket_baru.strip():
-        st.sidebar.error("Keterangan tidak boleh kosong.")
-    elif jumlah_baru <= 0:
-        st.sidebar.error("Jumlah harus lebih dari 0.")
-    else:
-        masuk_baru = jumlah_baru if jenis_baru == "Pemasukan" else 0
-        keluar_baru = jumlah_baru if jenis_baru == "Pengeluaran" else 0
-        st.session_state["ledger_df"] = append_transaction(
-            df, tgl_baru, ket_baru, kategori_baru, masuk=masuk_baru, keluar=keluar_baru
+if not st.session_state["admin_authed"]:
+    st.sidebar.caption("Login sebagai admin di atas untuk menambah transaksi.")
+else:
+    with st.sidebar.form("form_tambah_transaksi", clear_on_submit=True):
+        tgl_baru = st.date_input("Tanggal", value=df["tanggal"].max().date())
+        ket_baru = st.text_input("Keterangan")
+        jenis_baru = st.radio("Jenis", ["Pemasukan", "Pengeluaran"], horizontal=True)
+        jumlah_baru = st.number_input("Jumlah (Rp)", min_value=0, step=1000, format="%d")
+        kategori_opts_all = sorted(df["kategori"].unique().tolist())
+        if "Lainnya" not in kategori_opts_all:
+            kategori_opts_all.append("Lainnya")
+        kategori_baru = st.selectbox(
+            "Kategori", kategori_opts_all, index=kategori_opts_all.index("Lainnya")
         )
-        st.sidebar.success(f"Transaksi '{ket_baru}' ditambahkan.")
-        st.rerun()
+        submitted = st.form_submit_button("Tambah Transaksi", use_container_width=True)
 
-st.sidebar.caption(
-    "Transaksi baru selalu ditambahkan setelah transaksi terakhir & saldo "
-    "dilanjutkan dari saldo terkini."
-)
+    if submitted:
+        if not ket_baru.strip():
+            st.sidebar.error("Keterangan tidak boleh kosong.")
+        elif jumlah_baru <= 0:
+            st.sidebar.error("Jumlah harus lebih dari 0.")
+        else:
+            masuk_baru = jumlah_baru if jenis_baru == "Pemasukan" else 0
+            keluar_baru = jumlah_baru if jenis_baru == "Pengeluaran" else 0
+            st.session_state["ledger_df"] = append_transaction(
+                df, tgl_baru, ket_baru, kategori_baru, masuk=masuk_baru, keluar=keluar_baru
+            )
+            st.sidebar.success(f"Transaksi '{ket_baru}' ditambahkan.")
+            st.rerun()
+
+    st.sidebar.caption(
+        "Transaksi baru selalu ditambahkan setelah transaksi terakhir & saldo "
+        "dilanjutkan dari saldo terkini."
+    )
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Filter")
@@ -300,6 +326,32 @@ c4.metric(
     delta_color="normal" if net >= 0 else "inverse",
 )
 c5.metric("Jumlah Transaksi", f"{len(fdf):,}".replace(",", "."))
+
+st.markdown("---")
+
+# ---------------------------------------------------------------------------
+# Transaksi terbesar (ditaruh persis di bawah summary)
+# ---------------------------------------------------------------------------
+st.subheader("10 Transaksi Terbesar")
+top_col1, top_col2 = st.columns(2)
+
+with top_col1:
+    st.markdown("**Pemasukan Terbesar**")
+    top_in = fdf.nlargest(10, "masuk")[["tanggal", "keterangan", "kategori", "masuk"]]
+    st.dataframe(
+        top_in.style.format({"tanggal": lambda d: d.strftime("%d %b %Y"), "masuk": "Rp {:,.0f}"}),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+with top_col2:
+    st.markdown("**Pengeluaran Terbesar**")
+    top_out = fdf.nlargest(10, "keluar")[["tanggal", "keterangan", "kategori", "keluar"]]
+    st.dataframe(
+        top_out.style.format({"tanggal": lambda d: d.strftime("%d %b %Y"), "keluar": "Rp {:,.0f}"}),
+        hide_index=True,
+        use_container_width=True,
+    )
 
 st.markdown("---")
 
@@ -395,30 +447,6 @@ with col_keluar:
         st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------------------------------
-# Transaksi terbesar
-# ---------------------------------------------------------------------------
-st.subheader("10 Transaksi Terbesar")
-top_col1, top_col2 = st.columns(2)
-
-with top_col1:
-    st.markdown("**Pemasukan Terbesar**")
-    top_in = fdf.nlargest(10, "masuk")[["tanggal", "keterangan", "kategori", "masuk"]]
-    st.dataframe(
-        top_in.style.format({"tanggal": lambda d: d.strftime("%d %b %Y"), "masuk": "Rp {:,.0f}"}),
-        hide_index=True,
-        use_container_width=True,
-    )
-
-with top_col2:
-    st.markdown("**Pengeluaran Terbesar**")
-    top_out = fdf.nlargest(10, "keluar")[["tanggal", "keterangan", "kategori", "keluar"]]
-    st.dataframe(
-        top_out.style.format({"tanggal": lambda d: d.strftime("%d %b %Y"), "keluar": "Rp {:,.0f}"}),
-        hide_index=True,
-        use_container_width=True,
-    )
-
-# ---------------------------------------------------------------------------
 # Tabel transaksi lengkap
 # ---------------------------------------------------------------------------
 st.markdown("---")
@@ -474,6 +502,6 @@ with dl_col3:
 
 st.caption(
     "Sumber: Laporan Keuangan Al Ikhlas — Sheet1 (ledger transaksi). "
-    "Transaksi yang ditambahkan lewat form sidebar berlaku untuk sesi ini; "
+    "Transaksi yang ditambahkan lewat form berlaku untuk sesi ini; "
     "gunakan tombol unduh XLSX untuk menyimpannya secara permanen."
 )
