@@ -307,49 +307,87 @@ st.caption(
     f"{start_date:%d %b %Y} – {end_date:%d %b %Y}"
 )
 
-saldo_akhir_periode = fdf["saldo"].iloc[-1] if not fdf.empty else 0
 saldo_terkini = df["saldo"].iloc[-1]
 total_masuk = fdf["masuk"].sum()
 total_keluar = fdf["keluar"].sum()
-net = total_masuk - total_keluar
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Saldo Terkini", format_rupiah(saldo_terkini))
+# Kartu Saldo Terkini dibuat menonjol (highlight) dibanding kartu lain.
+st.markdown(
+    f"""
+    <div style="background: linear-gradient(135deg, #1f8a70, #14532d);
+                padding: 22px 28px; border-radius: 14px; color: white;
+                margin-bottom: 18px;">
+        <div style="font-size: 15px; opacity: 0.85; margin-bottom: 4px;">
+            💰 Saldo Terkini
+        </div>
+        <div style="font-size: 38px; font-weight: 800; letter-spacing: -0.5px;">
+            {format_rupiah(saldo_terkini)}
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+c2, c3, c4 = st.columns(3)
 c2.metric("Pemasukan (periode)", format_rupiah(total_masuk))
 c3.metric("Pengeluaran (periode)", format_rupiah(total_keluar))
-
-c4, c5 = st.columns(2)
-c4.metric(
-    "Arus Kas Bersih (periode)",
-    format_rupiah(net),
-    delta=format_rupiah(net),
-    delta_color="normal" if net >= 0 else "inverse",
-)
-c5.metric("Jumlah Transaksi", f"{len(fdf):,}".replace(",", "."))
+c4.metric("Jumlah Transaksi", f"{len(fdf):,}".replace(",", "."))
 
 st.markdown("---")
 
 # ---------------------------------------------------------------------------
-# Transaksi terbesar (ditaruh persis di bawah summary)
+# Daftar Transaksi (3 bulan terakhir) — ditaruh persis di bawah summary
 # ---------------------------------------------------------------------------
-st.subheader("10 Transaksi Terbesar")
-top_col1, top_col2 = st.columns(2)
+st.subheader("Daftar Transaksi (3 Bulan Terakhir)")
 
-with top_col1:
-    st.markdown("**Pemasukan Terbesar**")
-    top_in = fdf.nlargest(10, "masuk")[["tanggal", "keterangan", "kategori", "masuk"]]
-    st.dataframe(
-        top_in.style.format({"tanggal": lambda d: d.strftime("%d %b %Y"), "masuk": "Rp {:,.0f}"}),
-        hide_index=True,
+cutoff_3bulan = df["tanggal"].max() - pd.DateOffset(months=3)
+recent_df = df[df["tanggal"] >= cutoff_3bulan].copy()
+
+search = st.text_input("Cari keterangan...", "")
+table_df = recent_df.copy()
+if search:
+    table_df = table_df[table_df["keterangan"].str.contains(search, case=False, na=False)]
+
+display_df = table_df[["tanggal", "keterangan", "kategori", "masuk", "keluar", "saldo"]].sort_values(
+    "tanggal", ascending=False
+)
+st.dataframe(
+    display_df.style.format(
+        {
+            "tanggal": lambda d: d.strftime("%d %b %Y"),
+            "masuk": "Rp {:,.0f}",
+            "keluar": "Rp {:,.0f}",
+            "saldo": "Rp {:,.0f}",
+        }
+    ),
+    hide_index=True,
+    use_container_width=True,
+    height=400,
+)
+
+dl_col1, dl_col2, dl_col3 = st.columns([1, 1, 2])
+with dl_col1:
+    csv = display_df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇️ Unduh terfilter (CSV)", csv, "transaksi_al_ikhlas.csv", "text/csv",
         use_container_width=True,
     )
-
-with top_col2:
-    st.markdown("**Pengeluaran Terbesar**")
-    top_out = fdf.nlargest(10, "keluar")[["tanggal", "keterangan", "kategori", "keluar"]]
-    st.dataframe(
-        top_out.style.format({"tanggal": lambda d: d.strftime("%d %b %Y"), "keluar": "Rp {:,.0f}"}),
-        hide_index=True,
+with dl_col2:
+    xlsx_filtered = to_excel_bytes(table_df.sort_values("tanggal"))
+    st.download_button(
+        "⬇️ Unduh terfilter (XLSX)",
+        xlsx_filtered,
+        "transaksi_al_ikhlas_terfilter.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+with dl_col3:
+    xlsx_full = to_excel_bytes(df.sort_values("tanggal"))
+    st.download_button(
+        "⬇️ Unduh SELURUH ledger (XLSX) — termasuk transaksi baru",
+        xlsx_full,
+        "ledger_al_ikhlas_lengkap.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
 
@@ -447,56 +485,27 @@ with col_keluar:
         st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------------------------------
-# Tabel transaksi lengkap
+# Transaksi terbesar
 # ---------------------------------------------------------------------------
 st.markdown("---")
-st.subheader("Daftar Transaksi")
+st.subheader("10 Transaksi Terbesar")
+top_col1, top_col2 = st.columns(2)
 
-search = st.text_input("Cari keterangan...", "")
-table_df = fdf.copy()
-if search:
-    table_df = table_df[table_df["keterangan"].str.contains(search, case=False, na=False)]
-
-display_df = table_df[["tanggal", "keterangan", "kategori", "masuk", "keluar", "saldo"]].sort_values(
-    "tanggal", ascending=False
-)
-st.dataframe(
-    display_df.style.format(
-        {
-            "tanggal": lambda d: d.strftime("%d %b %Y"),
-            "masuk": "Rp {:,.0f}",
-            "keluar": "Rp {:,.0f}",
-            "saldo": "Rp {:,.0f}",
-        }
-    ),
-    hide_index=True,
-    use_container_width=True,
-    height=400,
-)
-
-dl_col1, dl_col2, dl_col3 = st.columns([1, 1, 2])
-with dl_col1:
-    csv = display_df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "⬇️ Unduh terfilter (CSV)", csv, "transaksi_al_ikhlas.csv", "text/csv",
+with top_col1:
+    st.markdown("**Pemasukan Terbesar**")
+    top_in = fdf.nlargest(10, "masuk")[["tanggal", "keterangan", "kategori", "masuk"]]
+    st.dataframe(
+        top_in.style.format({"tanggal": lambda d: d.strftime("%d %b %Y"), "masuk": "Rp {:,.0f}"}),
+        hide_index=True,
         use_container_width=True,
     )
-with dl_col2:
-    xlsx_filtered = to_excel_bytes(table_df.sort_values("tanggal"))
-    st.download_button(
-        "⬇️ Unduh terfilter (XLSX)",
-        xlsx_filtered,
-        "transaksi_al_ikhlas_terfilter.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
-with dl_col3:
-    xlsx_full = to_excel_bytes(df.sort_values("tanggal"))
-    st.download_button(
-        "⬇️ Unduh SELURUH ledger (XLSX) — termasuk transaksi baru",
-        xlsx_full,
-        "ledger_al_ikhlas_lengkap.xlsx",
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+
+with top_col2:
+    st.markdown("**Pengeluaran Terbesar**")
+    top_out = fdf.nlargest(10, "keluar")[["tanggal", "keterangan", "kategori", "keluar"]]
+    st.dataframe(
+        top_out.style.format({"tanggal": lambda d: d.strftime("%d %b %Y"), "keluar": "Rp {:,.0f}"}),
+        hide_index=True,
         use_container_width=True,
     )
 
