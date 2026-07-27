@@ -141,11 +141,24 @@ if st.session_state["admin_authed"]:
             ok, msg, method = persist_ledger(
                 file_bytes, DEFAULT_PATH, "Update ledger via dashboard admin"
             )
+            # Buang cache get_data() supaya sesi ini & sesi berikutnya tidak
+            # membaca versi lama yang ter-cache dari sebelum disimpan.
+            get_data.clear()
         if ok:
-            st.sidebar.success(msg)
             if method == "github":
+                st.sidebar.success(
+                    "✅ Tersimpan ke GitHub. " + msg
+                )
                 st.sidebar.caption(
-                    "App akan restart otomatis dalam 1-2 menit untuk memuat data terbaru."
+                    "App akan restart otomatis dalam 1-2 menit untuk memuat data terbaru "
+                    "di semua sesi/pengunjung lain."
+                )
+            else:
+                st.sidebar.warning(
+                    "⚠️ GITHUB_TOKEN/GITHUB_REPO belum diatur di Secrets, jadi "
+                    "cuma disimpan ke file lokal (" + msg + "). Kalau app ini "
+                    "berjalan di Streamlit Cloud, penyimpanan lokal TIDAK permanen "
+                    "(hilang saat app restart) — pastikan Secrets sudah diisi."
                 )
         else:
             st.sidebar.error(msg)
