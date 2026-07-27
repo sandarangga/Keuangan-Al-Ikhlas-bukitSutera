@@ -95,8 +95,33 @@ def _categorize(keterangan: str) -> str:
     return "Lainnya"
 
 
+CANONICAL_SHEET_NAME = "Ledger"
+
+
 def load_ledger(xlsx_path: str | Path) -> pd.DataFrame:
-    """Load & clean the main transaction ledger (Sheet1)."""
+    """Load & clean the ledger, auto-detecting the file format.
+
+    Supports two formats:
+    - The original monthly-report layout (Sheet1, header at Excel row 8) —
+      used for the raw files the DKM hands you each month.
+    - The app's own "canonical" export layout (sheet named "Ledger", header
+      on row 1, includes a KATEGORI column) — used once transactions have
+      been persisted permanently via the dashboard's "Simpan Permanen"
+      button, so re-loading the saved file round-trips correctly.
+    """
+    try:
+        sheet_names = pd.ExcelFile(xlsx_path, engine="openpyxl").sheet_names
+    except Exception:
+        sheet_names = []
+
+    if CANONICAL_SHEET_NAME in sheet_names:
+        return _load_canonical_format(xlsx_path)
+    return _load_raw_monthly_report(xlsx_path)
+
+
+def _load_raw_monthly_report(xlsx_path: str | Path) -> pd.DataFrame:
+    """Parse the original monthly-report ledger: Sheet1, header row 8,
+    columns NO, TANGGAL, KETERANGAN, MASUK, KELUAR, SALDO."""
     raw = pd.read_excel(
         xlsx_path,
         sheet_name=SHEET_NAME,
@@ -123,6 +148,45 @@ def load_ledger(xlsx_path: str | Path) -> pd.DataFrame:
     raw["net"] = raw["masuk"] - raw["keluar"]
     raw["bulan"] = raw["tanggal"].dt.to_period("M").dt.to_timestamp()
     raw["tahun"] = raw["tanggal"].dt.year
+
+    return raw[["no", "tanggal", "bulan", "tahun", "keterangan", "kategori",
+                "masuk", "keluar", "net", "saldo"]]
+
+
+def _load_canonical_format(xlsx_path: str | Path) -> pd.DataFrame:
+    """Parse the app's own export layout: sheet "Ledger", header row 1,
+    columns NO, TANGGAL, KETERANGAN, KATEGORI, MASUK, KELUAR, SALDO."""
+    raw = pd.read_excel(
+        xlsx_path,
+        sheet_name=CANONICAL_SHEET_NAME,
+        header=0,
+        engine="openpyxl",
+    )
+    raw.columns = [str(c).strip().lower() for c in raw.columns]
+
+    raw = raw[raw["keterangan"].notna()].copy()
+    raw = raw[~raw["keterangan"].astype(str).str.strip().str.upper().eq("TOTAL")]
+
+    raw["tanggal"] = raw["tanggal"].apply(_parse_indo_date)
+    raw["masuk"] = raw["masuk"].apply(_to_number)
+    raw["keluar"] = raw["keluar"].apply(_to_number)
+    raw["saldo"] = raw["saldo"].apply(_to_number)
+    raw["keterangan"] = raw["keterangan"].astype(str).str.strip()
+
+    if "kategori" in raw.columns:
+        raw["kategori"] = raw["kategori"].fillna("").astype(str).str.strip()
+    else:
+        raw["kategori"] = ""
+    blank_kategori = raw["kategori"] == ""
+    raw.loc[blank_kategori, "kategori"] = raw.loc[blank_kategori, "keterangan"].apply(_categorize)
+
+    raw = raw[raw["tanggal"].notna()].copy()
+    raw = raw.sort_values(["tanggal"], kind="stable").reset_index(drop=True)
+
+    raw["net"] = raw["masuk"] - raw["keluar"]
+    raw["bulan"] = raw["tanggal"].dt.to_period("M").dt.to_timestamp()
+    raw["tahun"] = raw["tanggal"].dt.year
+    raw["no"] = range(1, len(raw) + 1)
 
     return raw[["no", "tanggal", "bulan", "tahun", "keterangan", "kategori",
                 "masuk", "keluar", "net", "saldo"]]

@@ -8,6 +8,7 @@ Dashboard interaktif (Streamlit) untuk laporan keuangan DKM Al Ikhlas, dibuat da
 - `dashboard.py` — aplikasi Streamlit utama
 - `data_loader.py` — pembaca & pembersih data dari Excel (parsing tanggal Indonesia, kategorisasi transaksi, agregasi bulanan, tambah transaksi, export XLSX)
 - `auth.py` — password gate admin (dipakai bersama untuk: ganti file laporan, tambah transaksi, input kotak amal)
+- `persistence.py` — simpan ledger secara permanen (commit ke GitHub saat online, atau tulis langsung ke file saat dijalankan lokal)
 - `data/laporan_keuangan.xlsx` — salinan file sumber
 - `requirements.txt` — daftar dependensi Python
 
@@ -39,9 +40,23 @@ Dashboard interaktif (Streamlit) untuk laporan keuangan DKM Al Ikhlas, dibuat da
 - **Export ke Excel (.xlsx)** — unduh ledger terfilter atau seluruh ledger (termasuk transaksi baru yang sudah diinput) sebagai file Excel yang rapi. CSV tetap tersedia juga.
 - **Ganti file** — bisa upload file `.xlsx` laporan bulan lain langsung dari sidebar, tanpa perlu edit kode.
 
-## Catatan penting soal data yang diinput
+## Menyimpan transaksi secara permanen
 
-Transaksi yang ditambahkan lewat form (baik "Tambah Transaksi" maupun "Input Kotak Amal") disimpan di memori sesi Streamlit — akan hilang kalau aplikasi di-restart. Untuk menyimpannya secara permanen, unduh ledger sebagai XLSX lalu ganti/gabungkan dengan file sumber di `data/laporan_keuangan.xlsx`.
+Transaksi yang ditambahkan lewat form ("Tambah Transaksi" atau "Input Kotak Amal") awalnya cuma tersimpan di memori sesi Streamlit — hilang kalau di-refresh/logout/app restart. Supaya permanen, admin yang sudah login akan melihat tombol **"💾 Simpan Permanen"** di sidebar.
+
+- **Kalau dijalankan lokal** (`streamlit run dashboard.py` di komputer sendiri): tombol ini langsung menimpa file `data/laporan_keuangan.xlsx` di disk.
+- **Kalau di-deploy di Streamlit Community Cloud**: filesystem di sana bersifat sementara (hilang tiap redeploy), jadi tombol ini otomatis commit file yang sudah diperbarui langsung ke repo GitHub lewat GitHub API. Untuk ini, dua Secrets berikut wajib diisi di **Settings → Secrets** app kamu di share.streamlit.io:
+
+  ```
+  GITHUB_TOKEN = "ghp_xxx..."
+  GITHUB_REPO = "sandarangga/Keuangan-Al-Ikhlas-bukitSutera"
+  ```
+
+  (`GITHUB_TOKEN` boleh pakai token classic yang sudah kamu buat sebelumnya, asal masih berlaku dan punya scope `repo`.)
+
+  Setelah "Simpan Permanen" berhasil commit ke GitHub, Streamlit Cloud akan otomatis redeploy dalam 1-2 menit untuk memuat data terbaru — persis seperti kalau kamu `git push` manual.
+
+File yang tersimpan lewat fitur ini memakai format sedikit berbeda dari file laporan bulanan asli (ada sheet bernama "Ledger", header di baris pertama, ada kolom KATEGORI) — `data_loader.py` sudah bisa membaca kedua format itu secara otomatis, jadi tidak masalah.
 
 ## Catatan kategorisasi
 

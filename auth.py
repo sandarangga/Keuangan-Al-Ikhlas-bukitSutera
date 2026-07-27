@@ -8,12 +8,17 @@ post new "pemasukan kotak amal" entries.
 
 How to change the password
 ---------------------------
-Option A (recommended): set an environment variable before running Streamlit:
+Option A (local): set an environment variable before running Streamlit:
 
     export KOTAK_AMAL_PASSWORD="password-rahasia-anda"
     streamlit run dashboard.py
 
-Option B: edit DEFAULT_PASSWORD below directly.
+Option B (Streamlit Community Cloud): add it to the app's Secrets
+(Settings -> Secrets) as:
+
+    KOTAK_AMAL_PASSWORD = "password-rahasia-anda"
+
+Option C: edit DEFAULT_PASSWORD below directly.
 """
 
 import hashlib
@@ -26,9 +31,24 @@ def _hash(pw: str) -> str:
     return hashlib.sha256(pw.encode("utf-8")).hexdigest()
 
 
+def _configured_password() -> str:
+    # 1) Streamlit secrets (used on Streamlit Community Cloud)
+    try:
+        import streamlit as st
+
+        if "KOTAK_AMAL_PASSWORD" in st.secrets:
+            return st.secrets["KOTAK_AMAL_PASSWORD"]
+    except Exception:
+        pass
+    # 2) environment variable (local / other hosts)
+    if "KOTAK_AMAL_PASSWORD" in os.environ:
+        return os.environ["KOTAK_AMAL_PASSWORD"]
+    # 3) fallback default
+    return DEFAULT_PASSWORD
+
+
 def _current_password_hash() -> str:
-    pw = os.environ.get("KOTAK_AMAL_PASSWORD", DEFAULT_PASSWORD)
-    return _hash(pw)
+    return _hash(_configured_password())
 
 
 def check_password(candidate: str) -> bool:

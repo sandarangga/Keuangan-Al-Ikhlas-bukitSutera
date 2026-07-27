@@ -24,6 +24,7 @@ from data_loader import (
     monthly_summary,
     to_excel_bytes,
 )
+from persistence import persist_ledger
 
 KOTAK_AMAL_DENOMINASI = [100000, 50000, 20000, 10000, 5000, 2000, 1000, 500]
 
@@ -132,6 +133,28 @@ if st.session_state.get("_source_key") != source_key:
 
 df = st.session_state["ledger_df"]
 
+if st.session_state["admin_authed"]:
+    st.sidebar.markdown("---")
+    if st.sidebar.button("💾 Simpan Permanen", use_container_width=True):
+        with st.spinner("Menyimpan ledger secara permanen..."):
+            file_bytes = to_excel_bytes(df.sort_values("tanggal"))
+            ok, msg, method = persist_ledger(
+                file_bytes, DEFAULT_PATH, "Update ledger via dashboard admin"
+            )
+        if ok:
+            st.sidebar.success(msg)
+            if method == "github":
+                st.sidebar.caption(
+                    "App akan restart otomatis dalam 1-2 menit untuk memuat data terbaru."
+                )
+        else:
+            st.sidebar.error(msg)
+    st.sidebar.caption(
+        "Transaksi yang ditambahkan lewat form baru tersimpan permanen "
+        "setelah kamu klik tombol ini — sebelum itu, transaksi hanya "
+        "tersimpan selama sesi berjalan."
+    )
+
 st.sidebar.markdown("---")
 page = st.sidebar.radio(
     "Halaman", ["📊 Dashboard", "🪙 Input Kotak Amal"], label_visibility="collapsed"
@@ -214,7 +237,8 @@ if page == "🪙 Input Kotak Amal":
         st.success(
             f"Tercatat: **Pemasukan Kotak Amal** sebesar "
             f"Rp{total_amal:,.0f}".replace(",", ".")
-            + f" pada {tgl_amal:%d %b %Y}."
+            + f" pada {tgl_amal:%d %b %Y}. "
+            "Jangan lupa klik **💾 Simpan Permanen** di sidebar supaya tidak hilang."
         )
         st.session_state["amal_form_version"] += 1
         st.rerun()
@@ -257,7 +281,10 @@ else:
             st.session_state["ledger_df"] = append_transaction(
                 df, tgl_baru, ket_baru, kategori_baru, masuk=masuk_baru, keluar=keluar_baru
             )
-            st.sidebar.success(f"Transaksi '{ket_baru}' ditambahkan.")
+            st.sidebar.success(
+                f"Transaksi '{ket_baru}' ditambahkan. Klik 💾 Simpan Permanen "
+                "di bawah supaya tidak hilang."
+            )
             st.rerun()
 
     st.sidebar.caption(
@@ -269,11 +296,22 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Filter")
 
 min_date, max_date = df["tanggal"].min().date(), df["tanggal"].max().date()
+
+# Kalau ada transaksi baru yang menggeser tanggal terbaru (mis. lewat "Tambah
+# Transaksi" atau "Input Kotak Amal"), reset widget filter tanggal supaya
+# rentangnya otomatis ikut melebar ke tanggal terbaru itu — tanpa ini,
+# Streamlit akan tetap memakai rentang lama yang pernah dipilih sebelumnya,
+# sehingga transaksi baru terlihat "hilang" dari dashboard.
+if st.session_state.get("_date_filter_max_seen") != max_date:
+    st.session_state.pop("date_range_filter", None)
+    st.session_state["_date_filter_max_seen"] = max_date
+
 date_range = st.sidebar.date_input(
     "Rentang tanggal",
     value=(min_date, max_date),
     min_value=min_date,
     max_value=max_date,
+    key="date_range_filter",
 )
 if isinstance(date_range, tuple) and len(date_range) == 2:
     start_date, end_date = date_range
